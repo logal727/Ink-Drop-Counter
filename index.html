@@ -1,0 +1,708 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#14121a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Lore Tracker">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="shortcut icon" href="favicon.ico">
+<title>Lorcana Lore Tracker</title>
+<style>
+  :root {
+    --chrome: #14121a;
+    --chrome-text: #f1ecdf;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden; background: var(--chrome);
+    color: var(--chrome-text); font-family: var(--sans);
+    overscroll-behavior: none; user-select: none; -webkit-user-select: none;
+    touch-action: manipulation;
+  }
+  #app {
+    position: fixed; inset: 0; display: flex; flex-direction: column;
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  /* let the bottom panel's color run under the home indicator, but keep controls clear of it */
+  #panel0 { padding-bottom: env(safe-area-inset-bottom, 0px); }
+
+  /* ---------- player panel ---------- */
+  .panel {
+    position: relative; flex: 1 1 0; min-height: 0; overflow: hidden;
+    display: flex; flex-direction: column;
+    transition: background-color .25s;
+  }
+  .panel.flipped { transform: rotate(180deg); }
+  .fx { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
+
+  /* lore area */
+  .lore {
+    position: relative; flex: 1 1 0; min-height: 0; container-type: size;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .zone {
+    position: absolute; top: 0; bottom: 0; width: 50%;
+    border: 0; margin: 0; background: transparent; color: inherit;
+    font: 300 clamp(44px, 11vmin, 90px)/1 var(--sans);
+    display: flex; align-items: center; opacity: .55;
+    padding: 0 clamp(14px, 5vw, 40px); cursor: pointer;
+  }
+  .zone.minus { left: 0; justify-content: flex-start; }
+  .zone.plus  { right: 0; justify-content: flex-end; }
+  .zone:active { background: rgba(255,255,255,.14); opacity: 1; }
+  .zone:focus-visible, .inkbtn:focus-visible { outline: 3px solid currentColor; outline-offset: -6px; }
+
+  .center {
+    position: relative; z-index: 1; pointer-events: none; text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: .1em;
+  }
+  .name { font: 600 clamp(15px, 3.2vmin, 26px)/1.2 var(--sans); letter-spacing: .01em; opacity: .9; max-width: 60vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .score {
+    font: 700 min(58cqh, 50cqw)/0.88 var(--serif);
+    font-variant-numeric: lining-nums tabular-nums; letter-spacing: -.02em;
+  }
+  .score.bump { animation: bump .18s ease-out; }
+  @keyframes bump { 0% { transform: scale(1.08); } 100% { transform: scale(1); } }
+  .badge { min-height: 1.4em; font: 600 clamp(13px, 2.8vmin, 22px)/1.4 var(--sans); padding: 0 .9em; border-radius: 99px; }
+  .badge.win { background: currentColor; }
+  .badge.win span { color: var(--bg); }
+  .panel.won .score { animation: glow 1.6s ease-in-out infinite alternate; }
+  @keyframes glow { from { text-shadow: 0 0 0 transparent; } to { text-shadow: 0 0 .25em currentColor; } }
+
+  /* ink drop area */
+  .ink {
+    position: relative; container-type: size; flex: 0 0 32%; display: flex; align-items: center; justify-content: center;
+    gap: clamp(14px, 6vw, 48px); padding: 4px 12px 8px;
+    background: linear-gradient(to bottom, rgba(0,0,0,0), rgba(0,0,0,.18));
+  }
+  .ink::before {
+    content: ""; position: absolute; left: 8%; right: 8%; top: 0; height: 1.5px;
+    background: linear-gradient(to right, transparent, currentColor, transparent); opacity: .35;
+  }
+  .inkbtn {
+    flex: 0 0 auto; width: clamp(60px, 11dvh, 96px); height: clamp(60px, 11dvh, 96px);
+    border-radius: 50%; border: 2px solid currentColor; color: inherit;
+    background: rgba(255,255,255,.12); cursor: pointer; padding: 0; margin: 0;
+    font: 300 clamp(36px, 7dvh, 60px)/1 var(--sans);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .inkbtn:active { background: rgba(255,255,255,.3); transform: scale(.94); }
+  .drop { height: min(100cqh, calc(46cqw * 1.24)); aspect-ratio: 100 / 124; position: relative; }
+  .drop svg {
+    width: 100%; height: 100%; overflow: visible;
+    filter: drop-shadow(0 0 10px color-mix(in srgb, var(--ink) 75%, transparent));
+  }
+  .dropnum { font: 700 40px var(--serif); fill: var(--ink-fg); text-anchor: middle; font-variant-numeric: lining-nums; }
+  .dropnum.long { font-size: 30px; }
+  .dropnum.xlong { font-size: 22px; }
+
+  .inkname {
+    display: none; position: absolute; top: 10px; left: 0; right: 0; text-align: center; z-index: 1; pointer-events: none;
+    font: 600 clamp(15px, 3.2vmin, 26px)/1.2 var(--sans); opacity: .9;
+  }
+
+  /* modes */
+  .panel.no-ink .ink { display: none; }
+  .panel.no-lore .lore { display: none; }
+  .panel.no-lore .ink { flex: 1 1 0; background: none; padding-top: clamp(34px, 6vmin, 50px); }
+  .panel.no-lore .ink::before { display: none; }
+  .panel.no-lore .inkname { display: block; }
+  .panel.no-lore .drop { pointer-events: none; z-index: 1; height: min(100cqh, calc(78cqw * 1.24)); }
+  .panel.no-lore .inkbtn {
+    position: absolute; top: 0; bottom: 0; width: 50%; height: auto; border: 0; border-radius: 0;
+    background: transparent; opacity: .55; font: 300 clamp(44px, 11vmin, 90px)/1 var(--sans);
+    padding: 0 clamp(14px, 5vw, 40px);
+  }
+  .panel.no-lore .inkbtn:first-of-type { left: 0; justify-content: flex-start; }
+  .panel.no-lore .inkbtn:last-of-type { right: 0; justify-content: flex-end; }
+  .panel.no-lore .inkbtn:active { background: rgba(255,255,255,.14); opacity: 1; transform: none; }
+
+  /* ---------- middle bar ---------- */
+  .bar {
+    flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 6px 10px; background: var(--chrome);
+  }
+  .bar .target { font-size: 14px; opacity: .8; text-align: center; }
+  .bar button {
+    min-width: 52px; min-height: 48px; border-radius: 14px; border: 1.5px solid rgba(241,236,223,.3);
+    background: transparent; color: var(--chrome-text); font: 600 15px var(--sans); padding: 0 14px; cursor: pointer;
+  }
+  .bar button:active { background: rgba(255,255,255,.12); }
+  .bar button:disabled { opacity: .35; }
+  .bar button:focus-visible { outline: 3px solid var(--chrome-text); outline-offset: 2px; }
+
+  /* ---------- install prompt ---------- */
+  .install[hidden] { display: none; }
+  .install {
+    position: fixed; z-index: 50; left: 10px; right: 10px; bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+    max-width: 480px; margin: 0 auto; display: flex; gap: 12px; padding: 14px; border-radius: 18px;
+    background: #1f1c28; color: var(--chrome-text); border: 1.5px solid rgba(232,163,23,.55);
+    box-shadow: 0 10px 40px rgba(0,0,0,.5); animation: rise .35s ease-out; user-select: text; -webkit-user-select: text;
+  }
+  @keyframes rise { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+  .install-icon { width: 48px; height: 48px; border-radius: 12px; flex: 0 0 auto; }
+  .install-body strong { font: 700 17px var(--serif); }
+  .install-body p { margin: 4px 0 8px; font-size: 14px; opacity: .85; }
+  .install-body ol { margin: 0 0 10px; padding-left: 20px; font-size: 14px; line-height: 1.5; }
+  .shareicon { vertical-align: -4px; margin: 0 2px; }
+  .install-actions { display: flex; gap: 8px; }
+  .install-actions button { min-height: 44px; padding: 0 18px; border-radius: 12px; border: 0; font: 600 15px var(--sans); cursor: pointer; }
+  @media (prefers-reduced-motion: reduce) { .install { animation: none; } }
+
+  /* ---------- settings ---------- */
+  dialog {
+    width: min(94vw, 460px); max-height: 88dvh; padding: 0; border: 0; border-radius: 20px;
+    background: #1f1c28; color: var(--chrome-text); font-family: var(--sans);
+  }
+  dialog::backdrop { background: rgba(0,0,0,.65); }
+  .sheet { padding: 18px 18px 8px; overflow-y: auto; max-height: 88dvh; user-select: text; }
+  .sheet h2 { margin: 0 0 12px; font: 700 22px var(--serif); }
+  .sheet h3 { margin: 18px 0 8px; font: 600 15px var(--sans); }
+  .sheet h4 { margin: 12px 0 4px; font: 600 14px var(--sans); opacity: .85; }
+  .field { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 10px 0; font-size: 15px; }
+  .field input[type=text], .field input[type=number] {
+    flex: 1; min-width: 0; max-width: 220px; padding: 10px 12px; border-radius: 10px; font: 16px var(--sans);
+    border: 1.5px solid rgba(241,236,223,.3); background: #14121a; color: inherit;
+  }
+  .field input[type=color] { width: 48px; height: 38px; border: 0; background: none; padding: 0; }
+  .field input[type=checkbox] { width: 24px; height: 24px; accent-color: #E8A317; }
+  .swatches { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0; }
+  .swatch { width: 40px; height: 40px; border-radius: 50%; border: 2px solid rgba(255,255,255,.35); cursor: pointer; padding: 0; }
+  .swatch[aria-pressed=true] { outline: 3px solid #f1ecdf; outline-offset: 2px; }
+  .player-card { padding: 4px 12px 10px; border-radius: 14px; background: rgba(255,255,255,.05); margin-bottom: 10px; }
+  .actions { position: sticky; bottom: 0; background: #1f1c28; padding: 12px 0 14px; display: flex; gap: 10px; }
+  .actions button { flex: 1; min-height: 48px; border-radius: 12px; border: 0; font: 600 16px var(--sans); cursor: pointer; }
+  .field select {
+    flex: 1; min-width: 0; max-width: 240px; padding: 10px 12px; border-radius: 10px; font: 16px var(--sans);
+    border: 1.5px solid rgba(241,236,223,.3); background: #14121a; color: inherit;
+  }
+  .seg { display: flex; border-radius: 12px; overflow: hidden; border: 1.5px solid rgba(241,236,223,.3); }
+  .seg label { position: relative; cursor: pointer; }
+  .seg input { position: absolute; opacity: 0; inset: 0; }
+  .seg span { display: block; padding: 10px 24px; font-weight: 600; }
+  .seg input:checked + span { background: #E8A317; color: #1a1305; }
+  .seg input:focus-visible + span { outline: 3px solid #f1ecdf; outline-offset: -3px; }
+  .primary { background: #E8A317; color: #1a1305; }
+  .ghost { background: rgba(255,255,255,.1); color: inherit; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .score.bump, .panel.won .score { animation: none; }
+    .panel { transition: none; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- Player 2 (top) -->
+  <section class="panel" id="panel1">
+    <div class="lore" aria-label="Player 2 lore">
+      <button class="zone minus" data-p="1" data-k="l" data-d="-1" aria-label="Subtract 1 lore">&minus;</button>
+      <button class="zone plus"  data-p="1" data-k="l" data-d="1"  aria-label="Add 1 lore">+</button>
+      <div class="center"><div class="name"></div><div class="score" aria-live="polite">0</div><div class="badge"></div></div>
+    </div>
+    <div class="ink"><div class="inkname"></div>
+      <button class="inkbtn" data-p="1" data-k="d" data-d="-1" aria-label="Remove 1 ink drop">&minus;</button>
+      <div class="drop" role="img">
+        <svg viewBox="0 0 100 124" aria-hidden="true">
+          <defs><radialGradient id="g1" cx="35%" cy="62%" r="70%">
+            <stop offset="0" style="stop-color:var(--ink-hi)"/><stop offset=".55" style="stop-color:var(--ink)"/><stop offset="1" style="stop-color:var(--ink-lo)"/>
+          </radialGradient></defs>
+          <path d="M50 4 C50 4 10 52 10 80 a40 40 0 0 0 80 0 C90 52 50 4 50 4 Z" fill="url(#g1)" stroke="var(--ink-hi)" stroke-width="2" stroke-opacity=".6"/>
+          <ellipse cx="30" cy="84" rx="6" ry="12" fill="#fff" opacity=".35" transform="rotate(20 30 84)"/>
+          <text class="dropnum" x="50" y="94">0</text>
+        </svg>
+      </div>
+      <button class="inkbtn" data-p="1" data-k="d" data-d="1" aria-label="Add 1 ink drop">+</button>
+    </div>
+    <canvas class="fx"></canvas>
+  </section>
+
+  <div class="bar">
+    <button id="settingsBtn" aria-label="Settings">Settings</button>
+    <span class="target" id="targetLabel"></span>
+    <button id="undoBtn" aria-label="Undo last change">Undo</button>
+    <button id="resetBtn" aria-label="Start new game">New game</button>
+  </div>
+
+  <!-- Player 1 (bottom) -->
+  <section class="panel" id="panel0">
+    <div class="lore" aria-label="Player 1 lore">
+      <button class="zone minus" data-p="0" data-k="l" data-d="-1" aria-label="Subtract 1 lore">&minus;</button>
+      <button class="zone plus"  data-p="0" data-k="l" data-d="1"  aria-label="Add 1 lore">+</button>
+      <div class="center"><div class="name"></div><div class="score" aria-live="polite">0</div><div class="badge"></div></div>
+    </div>
+    <div class="ink"><div class="inkname"></div>
+      <button class="inkbtn" data-p="0" data-k="d" data-d="-1" aria-label="Remove 1 ink drop">&minus;</button>
+      <div class="drop" role="img">
+        <svg viewBox="0 0 100 124" aria-hidden="true">
+          <defs><radialGradient id="g0" cx="35%" cy="62%" r="70%">
+            <stop offset="0" style="stop-color:var(--ink-hi)"/><stop offset=".55" style="stop-color:var(--ink)"/><stop offset="1" style="stop-color:var(--ink-lo)"/>
+          </radialGradient></defs>
+          <path d="M50 4 C50 4 10 52 10 80 a40 40 0 0 0 80 0 C90 52 50 4 50 4 Z" fill="url(#g0)" stroke="var(--ink-hi)" stroke-width="2" stroke-opacity=".6"/>
+          <ellipse cx="30" cy="84" rx="6" ry="12" fill="#fff" opacity=".35" transform="rotate(20 30 84)"/>
+          <text class="dropnum" x="50" y="94">0</text>
+        </svg>
+      </div>
+      <button class="inkbtn" data-p="0" data-k="d" data-d="1" aria-label="Add 1 ink drop">+</button>
+    </div>
+    <canvas class="fx"></canvas>
+  </section>
+</div>
+
+<div id="install" class="install" role="region" aria-label="Install this app" hidden>
+  <img class="install-icon" src="icons/icon-192.png" alt="">
+  <div class="install-body">
+    <strong>Install Lore Tracker</strong>
+    <p id="installText"></p>
+    <ol id="installSteps" hidden></ol>
+    <div class="install-actions">
+      <button class="primary" id="installGo">Install</button>
+      <button class="ghost" id="installNo">Not now</button>
+    </div>
+  </div>
+</div>
+
+<dialog id="settings">
+  <div class="sheet">
+    <h2>Settings</h2>
+
+    <div class="field"><label for="mode">Mode</label>
+      <select id="mode">
+        <option value="both">Lore + ink drops</option>
+        <option value="ink">Ink drops only</option>
+        <option value="lore">Lore only</option>
+      </select></div>
+    <div class="field"><span id="plLbl">Players</span>
+      <div class="seg" role="radiogroup" aria-labelledby="plLbl">
+        <label><input type="radio" name="count" value="1"><span>1</span></label>
+        <label><input type="radio" name="count" value="2"><span>2</span></label>
+      </div></div>
+    <div class="field f-lore"><label for="label">Lore counter name</label><input id="label" type="text" maxlength="14" placeholder="Lore"></div>
+    <div class="field f-lore"><label for="target">Winning total</label><input id="target" type="number" min="1" max="99" inputmode="numeric"></div>
+
+    <div id="playerCards"></div>
+
+    <h3>Table</h3>
+    <div class="field"><label for="fxToggle">Magic effects</label><input id="fxToggle" type="checkbox"></div>
+    <div class="field f-two"><label for="flip">Rotate top player 180&deg;</label><input id="flip" type="checkbox"></div>
+    <div class="field"><label for="wake">Keep screen on</label><input id="wake" type="checkbox"></div>
+    <div class="field f-install"><span>Install as an app</span>
+      <button class="ghost" id="installHow" style="padding:10px 16px;border:0;border-radius:10px;font:600 14px var(--sans);cursor:pointer">How to</button></div>
+
+    <div class="actions">
+      <button class="ghost" id="defaultsBtn">Reset colors</button>
+      <button class="primary" id="closeBtn">Done</button>
+    </div>
+  </div>
+</dialog>
+
+<script>
+(() => {
+  const KEY = 'lorcana-tracker-v1';
+  const BG = [
+    ['Amber', '#E8A317'], ['Amethyst', '#7B3FA0'], ['Emerald', '#2E8B57'],
+    ['Ruby', '#C62839'], ['Sapphire', '#1F6FB5'], ['Steel', '#6B7B8C'], ['Night', '#23202c'], ['Parchment', '#E9DFC7']
+  ];
+  const INKS = [
+    ['Aqua', '#5ff2e0'], ['Violet', '#9d7bff'], ['Gold', '#ffd166'], ['Rose', '#ff6fb1'],
+    ['Lime', '#9be564'], ['Moonlight', '#f4f1ff'], ['Black ink', '#18132a']
+  ];
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const fresh = () => ({
+    ver: 2, mode: 'ink', count: 1, label: 'Lore', target: 20, flip: true, wake: true, fx: !reduced,
+    players: [
+      { name: 'Player 1', bg: '#1F6FB5', fg: '', ink: '#5ff2e0', score: 0, drops: 0 },
+      { name: 'Player 2', bg: '#C62839', fg: '', ink: '#ffd166', score: 0, drops: 0 }
+    ],
+    history: []   // entries: [kind('l'|'d'), playerIndex, previousValue]
+  });
+
+  let S = load();
+  function load() {
+    const d = fresh();
+    try {
+      const raw = JSON.parse(localStorage.getItem(KEY));
+      if (raw && raw.players && raw.players.length === 2) {
+        const s = Object.assign(d, raw);
+        s.players = raw.players.map((p, i) => Object.assign({}, fresh().players[i], p));
+        s.history = (raw.history || []).filter(h => h.length === 3);
+        if (!raw.ver) { s.mode = 'ink'; s.count = 1; }   // one-time move to the new defaults; colors/names kept
+        s.ver = 2;
+        if (!['both', 'ink', 'lore'].includes(s.mode)) s.mode = 'ink';
+        if (s.count !== 1) s.count = 2;
+        return s;
+      }
+    } catch (e) {}
+    return d;
+  }
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} };
+
+  const $ = (s, r = document) => r.querySelector(s);
+  const panels = [$('#panel0'), $('#panel1')];
+
+  /* ---------- colour helpers ---------- */
+  const lum = hex => {
+    const n = parseInt(hex.slice(1), 16);
+    const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(v => {
+      v /= 255; return v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4);
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const autoText = hex => lum(hex) > 0.4 ? '#14121a' : '#fbf7ec';
+  const mix = (a, b, t) => {
+    const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
+    const c = k => Math.round(((pa >> k) & 255) * (1 - t) + ((pb >> k) & 255) * t);
+    return `rgb(${c(16)},${c(8)},${c(0)})`;
+  };
+
+  /* ---------- render ---------- */
+  function render(bumpIdx) {
+    S.players.forEach((p, i) => {
+      const el = panels[i];
+      el.style.background = p.bg;
+      el.style.color = p.fg || autoText(p.bg);
+      el.style.setProperty('--bg', p.bg);
+      el.style.setProperty('--ink', p.ink);
+      el.style.setProperty('--ink-hi', mix(p.ink, '#ffffff', .45));
+      el.style.setProperty('--ink-lo', mix(p.ink, '#000000', .35));
+      el.style.setProperty('--ink-fg', autoText(p.ink));
+      el.classList.toggle('flipped', i === 1 && S.flip && S.count === 2);
+      el.classList.toggle('no-lore', S.mode === 'ink');
+      el.classList.toggle('no-ink', S.mode === 'lore');
+      $('.name', el).textContent = p.name;
+      $('.inkname', el).textContent = p.name;
+      const sc = $('.score', el);
+      sc.textContent = p.score;
+      const won = S.mode !== 'ink' && p.score >= S.target;
+      el.classList.toggle('won', won);
+      $('.badge', el).innerHTML = won ? '<span>Victory</span>' : '';
+      $('.badge', el).classList.toggle('win', won);
+      if (bumpIdx === i) { sc.classList.remove('bump'); void sc.offsetWidth; sc.classList.add('bump'); }
+      const num = $('.dropnum', el), len = String(p.drops).length;
+      num.textContent = p.drops;
+      num.setAttribute('class', 'dropnum' + (len === 3 ? ' long' : len > 3 ? ' xlong' : ''));
+      $('.drop', el).setAttribute('aria-label', `${p.drops} ink drops`);
+      $('.lore', el).setAttribute('aria-label', `${p.name} ${S.label}: ${p.score}`);
+    });
+    panels[1].style.display = S.count === 1 ? 'none' : '';
+    $('#targetLabel').textContent = S.mode === 'ink' ? 'Ink drops' : `${S.label} to ${S.target}`;
+    $('#undoBtn').disabled = !S.history.length;
+    document.title = `${S.label} Tracker`;
+  }
+
+  /* ---------- state changes ---------- */
+  function push(kind, i, old) { S.history.push([kind, i, old]); if (S.history.length > 100) S.history.shift(); }
+
+  function changeLore(i, d) {
+    const p = S.players[i], next = Math.max(0, p.score + d);
+    if (next === p.score) return;
+    push('l', i, p.score); p.score = next; save(); render(i);
+  }
+  function changeDrops(i, d) {
+    const p = S.players[i], next = Math.max(0, p.drops + d);
+    if (next === p.drops) return;
+    push('d', i, p.drops); p.drops = next; save(); render();
+    magic(i, d > 0 ? 1 : -1);
+  }
+
+  document.querySelectorAll('.zone, .inkbtn').forEach(b => {
+    const go = () => (b.dataset.k === 'l' ? changeLore : changeDrops)(+b.dataset.p, +b.dataset.d);
+    b.addEventListener('pointerdown', e => { e.preventDefault(); go(); });
+    b.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
+    b.addEventListener('contextmenu', e => e.preventDefault());
+  });
+
+  $('#undoBtn').onclick = () => {
+    const h = S.history.pop(); if (!h) return;
+    const [kind, i, old] = h, p = S.players[i];
+    if (kind === 'l') p.score = old; else p.drops = old;
+    save(); render(kind === 'l' ? i : undefined);
+  };
+  $('#resetBtn').onclick = () => {
+    if (!confirm('Start a new game? Lore and ink drops go back to 0.')) return;
+    S.players.forEach(p => { p.score = 0; p.drops = 0; }); S.history = []; save(); render();
+  };
+
+  /* ---------- magic effects ---------- */
+  const R = (a, b) => a + Math.random() * (b - a);
+  const fx = panels.map(el => {
+    const canvas = $('.fx', el), o = { el, canvas, ctx: canvas.getContext('2d'), parts: [], w: 0, h: 0, dpr: 1, raf: 0 };
+    const size = () => {
+      o.dpr = Math.min(window.devicePixelRatio || 1, 2); o.w = el.clientWidth; o.h = el.clientHeight;
+      canvas.width = o.w * o.dpr; canvas.height = o.h * o.dpr;
+    };
+    new ResizeObserver(size).observe(el); size();
+    return o;
+  });
+
+  function origin(el) {
+    const ink = $('.ink', el), d = $('.drop', el);
+    return { x: ink.offsetLeft + d.offsetLeft + d.offsetWidth / 2, y: ink.offsetTop + d.offsetTop + d.offsetHeight * 0.62, r: d.offsetHeight * 0.5 };
+  }
+
+  function addFx(o, x, y, r, ink) {
+    const hi = mix(ink, '#ffffff', .6), mid = mix(ink, '#ffffff', .25);
+    o.parts.push({ type: 'ring', x, y, r0: r * .6, r1: r * 2.4, life: .75, t: 0, color: mid, glow: ink });
+    o.parts.push({ type: 'ring', x, y, r0: r * .4, r1: r * 1.7, life: .6, t: -.12, color: hi, glow: ink });
+    for (let n = 0; n < 16; n++) {
+      const a = R(0, 6.283), s = R(30, 150), d = R(.2, 1) * r;
+      o.parts.push({ type: 'spark', x: x + Math.cos(a) * d * .8, y: y + Math.sin(a) * d * .8 - r * .2,
+        vx: Math.cos(a) * s, vy: Math.sin(a) * s - 60, g: -30, life: R(.7, 1.3), t: 0,
+        size: R(5, 13), rot: R(0, 3), spin: R(-3, 3), color: n % 3 ? hi : '#ffffff', glow: ink });
+    }
+    for (let n = 0; n < 8; n++) {
+      o.parts.push({ type: 'mote', x: x + R(-.9, .9) * r, y: y + R(-.6, .6) * r, vx: R(-15, 15), vy: -R(20, 70), g: 0,
+        life: R(.9, 1.4), t: 0, size: R(5, 12), color: mid, glow: ink });
+    }
+    for (let n = 0; n < 7; n++) {
+      o.parts.push({ type: 'drop', x, y: y - r * .3, vx: R(-70, 70), vy: -R(180, 340), g: 700,
+        life: R(.7, 1), t: 0, size: R(3, 6.5), color: ink, glow: ink });
+    }
+  }
+
+  function subFx(o, x, y, r, ink) {
+    const deep = mix(ink, '#000000', .5), mid = mix(ink, '#000000', .15), lite = mix(ink, '#ffffff', .2);
+    o.parts.push({ type: 'ring', x, y, r0: r * 2.3, r1: r * .45, life: .6, t: 0, color: mid, glow: ink });
+    for (let n = 0; n < 9; n++) {
+      o.parts.push({ type: 'drop', x: x + R(-.5, .5) * r, y: y + r * .2, vx: R(-40, 40), vy: R(-40, 40), g: R(700, 1100),
+        life: R(.7, 1.1), t: 0, size: R(3.5, 8), color: n % 2 ? ink : deep, glow: ink });
+    }
+    for (let n = 0; n < 6; n++) {
+      o.parts.push({ type: 'blot', x: x + R(-.7, .7) * r, y: y + R(-.3, .6) * r, vx: R(-10, 10), vy: R(10, 50), g: 0,
+        life: R(.6, .95), t: 0, size: R(10, 22), color: deep });
+    }
+    for (let n = 0; n < 7; n++) {
+      o.parts.push({ type: 'spark', x: x + R(-.6, .6) * r, y: y + R(-.4, .4) * r, vx: R(-80, 80), vy: R(-120, 0), g: 500,
+        life: R(.5, .8), t: 0, size: R(4, 8), rot: R(0, 3), spin: R(-4, 4), color: lite, glow: ink });
+    }
+  }
+
+  function star(c, s) {
+    c.beginPath(); c.moveTo(0, -s);
+    c.quadraticCurveTo(0, 0, s, 0); c.quadraticCurveTo(0, 0, 0, s);
+    c.quadraticCurveTo(0, 0, -s, 0); c.quadraticCurveTo(0, 0, 0, -s); c.fill();
+  }
+
+  function draw(c, p, dt) {
+    if (p.t < 0) return;
+    const k = p.t / p.life;
+    if (p.type === 'ring') {
+      const e = 1 - Math.pow(1 - k, 3), rad = p.r0 + (p.r1 - p.r0) * e;
+      c.save(); c.globalAlpha = (1 - k) * .9; c.strokeStyle = p.color; c.lineWidth = 1 + 3 * (1 - k);
+      c.shadowColor = p.glow; c.shadowBlur = 12; c.beginPath(); c.arc(p.x, p.y, Math.max(1, rad), 0, 6.283); c.stroke(); c.restore();
+      return;
+    }
+    p.vy += (p.g || 0) * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+    c.save();
+    if (p.type === 'spark') {
+      c.translate(p.x, p.y); c.rotate(p.rot + p.t * p.spin);
+      c.globalAlpha = (1 - k) * Math.min(1, k * 8 + .2); c.fillStyle = p.color;
+      c.shadowColor = p.glow; c.shadowBlur = 10;
+      star(c, p.size * (.4 + .6 * Math.sin(Math.PI * Math.min(1, k * 1.2))));
+    } else if (p.type === 'mote') {
+      c.globalAlpha = (1 - k) * .7; c.fillStyle = p.color; c.shadowColor = p.glow; c.shadowBlur = 14;
+      c.beginPath(); c.arc(p.x, p.y, p.size * (1 + k * .5), 0, 6.283); c.fill();
+    } else if (p.type === 'blot') {
+      c.globalAlpha = (1 - k) * .45; c.fillStyle = p.color;
+      c.beginPath(); c.arc(p.x, p.y, p.size * (1 + k * 1.2), 0, 6.283); c.fill();
+    } else if (p.type === 'drop') {
+      const sp = Math.hypot(p.vx, p.vy) || 1, tl = Math.min(sp * .035, 22);
+      c.globalAlpha = 1 - k * k; c.fillStyle = c.strokeStyle = p.color; c.shadowColor = p.glow; c.shadowBlur = 8;
+      c.lineCap = 'round'; c.lineWidth = p.size * .9;
+      c.beginPath(); c.moveTo(p.x, p.y); c.lineTo(p.x - p.vx / sp * tl, p.y - p.vy / sp * tl); c.stroke();
+      c.beginPath(); c.arc(p.x, p.y, p.size, 0, 6.283); c.fill();
+    }
+    c.restore();
+  }
+
+  function run(o) {
+    if (o.raf) return;
+    let last = performance.now();
+    const step = now => {
+      const dt = Math.min(.05, (now - last) / 1000); last = now;
+      const c = o.ctx; c.setTransform(o.dpr, 0, 0, o.dpr, 0, 0); c.clearRect(0, 0, o.w, o.h);
+      o.parts = o.parts.filter(p => (p.t += dt) < p.life);
+      o.parts.forEach(p => draw(c, p, dt));
+      o.raf = o.parts.length ? requestAnimationFrame(step) : 0;
+    };
+    o.raf = requestAnimationFrame(step);
+  }
+
+  function magic(i, dir) {
+    if (!S.fx) return;
+    const o = fx[i], { x, y, r } = origin(o.el), ink = S.players[i].ink;
+    (dir > 0 ? addFx : subFx)(o, x, y, r, ink);
+    run(o);
+    const drop = $('.drop', o.el);
+    drop.animate(dir > 0 ? [
+      { transform: 'scale(1)' },
+      { transform: 'scale(1.22) translateY(-5%)', offset: .35 },
+      { transform: 'scale(.95)', offset: .7 },
+      { transform: 'scale(1)' }
+    ] : [
+      { transform: 'scale(1)', filter: 'brightness(1)' },
+      { transform: 'scale(.8)', filter: 'brightness(.6) saturate(.6)', offset: .35 },
+      { transform: 'scale(1.04)', offset: .7 },
+      { transform: 'scale(1)', filter: 'brightness(1)' }
+    ], { duration: dir > 0 ? 520 : 480, easing: 'ease-out' });
+  }
+
+  /* ---------- settings ---------- */
+  const dlg = $('#settings');
+  function swatchRow(list, current, onPick, label) {
+    const sw = document.createElement('div'); sw.className = 'swatches'; sw.setAttribute('role', 'group'); sw.setAttribute('aria-label', label);
+    list.forEach(([nm, hex]) => {
+      const b = document.createElement('button');
+      b.className = 'swatch'; b.style.background = hex; b.title = nm; b.setAttribute('aria-label', nm);
+      b.setAttribute('aria-pressed', String(current.toLowerCase() === hex.toLowerCase()));
+      b.onclick = () => onPick(hex);
+      sw.appendChild(b);
+    });
+    return sw;
+  }
+  function buildPlayerCards() {
+    const host = $('#playerCards'); host.innerHTML = '';
+    const inkOn = S.mode !== 'lore';
+    S.players.forEach((p, i) => {
+      if (i === 1 && S.count === 1) return;
+      const card = document.createElement('div'); card.className = 'player-card';
+      card.innerHTML = `
+        <h3>${S.count === 1 ? 'Player' : i === 0 ? 'Player 1 (bottom)' : 'Player 2 (top)'}</h3>
+        <div class="field"><label for="n${i}">Name</label><input id="n${i}" type="text" maxlength="16"></div>
+        <h4>Background</h4><div class="bgsw"></div>
+        <div class="field"><label for="bg${i}">Custom background</label><input id="bg${i}" type="color"></div>
+        <div class="field"><label for="auto${i}">Automatic text color</label><input id="auto${i}" type="checkbox"></div>
+        <div class="field" id="fgrow${i}"><label for="fg${i}">Text color</label><input id="fg${i}" type="color"></div>
+        ${inkOn ? `<h4>Ink drop color</h4><div class="inksw"></div>
+        <div class="field"><label for="ink${i}">Custom ink color</label><input id="ink${i}" type="color"></div>` : ''}`;
+      host.appendChild(card);
+      $('#n' + i, card).value = p.name;
+      $('#bg' + i, card).value = p.bg;
+      $('#auto' + i, card).checked = !p.fg;
+      $('#fg' + i, card).value = p.fg || autoText(p.bg);
+      $('#fgrow' + i, card).style.display = p.fg ? '' : 'none';
+      if (inkOn) $('#ink' + i, card).value = p.ink;
+
+      $('.bgsw', card).replaceWith(swatchRow(BG, p.bg, hex => { p.bg = hex; save(); render(); buildPlayerCards(); }, 'Background colors'));
+      if (inkOn) $('.inksw', card).replaceWith(swatchRow(INKS, p.ink, hex => { p.ink = hex; save(); render(); buildPlayerCards(); }, 'Ink drop colors'));
+
+      $('#n' + i, card).oninput = e => { p.name = e.target.value || `Player ${i + 1}`; save(); render(); };
+      $('#bg' + i, card).oninput = e => { p.bg = e.target.value; save(); render(); };
+      $('#bg' + i, card).onchange = () => buildPlayerCards();
+      $('#auto' + i, card).onchange = e => { p.fg = e.target.checked ? '' : autoText(p.bg); save(); render(); buildPlayerCards(); };
+      $('#fg' + i, card).oninput = e => { p.fg = e.target.value; save(); render(); };
+      if (inkOn) {
+        $('#ink' + i, card).oninput = e => { p.ink = e.target.value; save(); render(); };
+        $('#ink' + i, card).onchange = () => buildPlayerCards();
+      }
+    });
+  }
+  function syncSettings() {
+    document.querySelectorAll('.f-install').forEach(el => { el.style.display = canInstallHelp ? '' : 'none'; });
+    $('#mode').value = S.mode;
+    document.querySelectorAll('input[name=count]').forEach(r => { r.checked = (+r.value === S.count); });
+    document.querySelectorAll('.f-lore').forEach(el => { el.style.display = S.mode === 'ink' ? 'none' : ''; });
+    document.querySelectorAll('.f-two').forEach(el => { el.style.display = S.count === 1 ? 'none' : ''; });
+  }
+  function openSettings() {
+    syncSettings();
+    $('#label').value = S.label; $('#target').value = S.target;
+    $('#fxToggle').checked = S.fx; $('#flip').checked = S.flip; $('#wake').checked = S.wake;
+    buildPlayerCards(); dlg.showModal();
+  }
+  $('#mode').onchange = e => { S.mode = e.target.value; save(); render(); syncSettings(); buildPlayerCards(); };
+  document.querySelectorAll('input[name=count]').forEach(r => {
+    r.onchange = () => { if (r.checked) { S.count = +r.value; save(); render(); syncSettings(); buildPlayerCards(); } };
+  });
+  $('#settingsBtn').onclick = openSettings;
+  $('#closeBtn').onclick = () => dlg.close();
+  dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
+  $('#label').oninput = e => { S.label = e.target.value.trim() || 'Lore'; save(); render(); };
+  $('#target').oninput = e => { const v = parseInt(e.target.value, 10); if (v > 0) { S.target = Math.min(99, v); save(); render(); } };
+  $('#fxToggle').onchange = e => { S.fx = e.target.checked; save(); };
+  $('#flip').onchange = e => { S.flip = e.target.checked; save(); render(); };
+  $('#wake').onchange = e => { S.wake = e.target.checked; save(); requestWake(); };
+  $('#defaultsBtn').onclick = () => {
+    const d = fresh();
+    S.players.forEach((p, i) => { p.bg = d.players[i].bg; p.fg = ''; p.ink = d.players[i].ink; });
+    save(); render(); buildPlayerCards();
+  };
+
+  /* ---------- keep screen awake ---------- */
+  let lock = null;
+  async function requestWake() {
+    try {
+      if (S.wake && 'wakeLock' in navigator && document.visibilityState === 'visible') {
+        lock = await navigator.wakeLock.request('screen');
+      } else if (!S.wake && lock) { await lock.release(); lock = null; }
+    } catch (e) {}
+  }
+  document.addEventListener('visibilitychange', requestWake);
+
+  /* ---------- install prompt (Add to Home Screen) ---------- */
+  const INSTALL_KEY = 'lorcana-install-v1';
+  const ua = navigator.userAgent;
+  const isIOS = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  const isAndroid = /Android/.test(ua);
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  const canInstallHelp = !standalone && (isIOS || isAndroid);
+  const inst = $('#install');
+  let deferred = null;
+  const seen = () => { try { return localStorage.getItem(INSTALL_KEY); } catch (e) { return null; } };
+  const mark = v => { try { localStorage.setItem(INSTALL_KEY, v); } catch (e) {} };
+  const SHARE = '<svg class="shareicon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 3v12M8 7l4-4 4 4M5 11v9h14v-9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+  function renderInstall() {
+    const steps = $('#installSteps'), go = $('#installGo'), no = $('#installNo');
+    $('#installText').textContent = 'Add it to your home screen to use it full-screen, even offline.';
+    if (isIOS) {
+      steps.innerHTML = `<li>Tap the Share button ${SHARE} in Safari\u2019s bottom bar (or under the \u2022\u2022\u2022 menu).</li><li>Scroll down and tap <b>Add to Home Screen</b>.</li><li>Tap <b>Add</b>.</li>`;
+      steps.hidden = false; go.textContent = 'Got it'; no.hidden = true;
+    } else if (deferred) {
+      steps.hidden = true; go.textContent = 'Install'; no.hidden = false;
+    } else {
+      steps.innerHTML = '<li>Tap the <b>\u22EE</b> menu in your browser.</li><li>Tap <b>Install app</b> (or <b>Add to Home screen</b>).</li><li>Confirm.</li>';
+      steps.hidden = false; go.textContent = 'Got it'; no.hidden = true;
+    }
+  }
+  function showInstall(force) {
+    if (!canInstallHelp || (!force && (seen() || dlg.open))) return;
+    renderInstall(); inst.hidden = false;
+  }
+  const hideInstall = () => { inst.hidden = true; };
+
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault(); deferred = e;
+    if (!inst.hidden) renderInstall();
+  });
+  window.addEventListener('appinstalled', () => { mark('installed'); deferred = null; hideInstall(); });
+
+  $('#installGo').onclick = async () => {
+    if (!isIOS && deferred) {
+      const d = deferred; deferred = null; hideInstall();
+      try { d.prompt(); const r = await d.userChoice; mark(r.outcome === 'accepted' ? 'installed' : 'dismissed'); }
+      catch (e) { mark('dismissed'); }
+    } else { mark('dismissed'); hideInstall(); }
+  };
+  $('#installNo').onclick = () => { mark('dismissed'); hideInstall(); };
+  $('#installHow').onclick = () => { dlg.close(); showInstall(true); };
+  setTimeout(() => showInstall(false), 2500);
+
+  render(); requestWake();
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  }
+})();
+</script>
+</body>
+</html>
