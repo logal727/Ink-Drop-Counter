@@ -1,7 +1,7 @@
 {
-  "name": "Lorcana Lore Tracker",
-  "short_name": "Lore Tracker",
-  "description": "Big, simple lore counter for Disney Lorcana",
+  "name": "Ink Dropper",
+  "short_name": "Ink Dropper",
+  "description": "Big, simple ink drop and lore counter for Disney Lorcana",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
