@@ -1,33 +1,35 @@
-const CACHE = 'lorcana-tracker-v9';
+// Include the installation path so separate previews on one origin have separate caches.
+const CACHE_PREFIX = `ink-dropper:${self.registration.scope}:`;
+const CACHE = `${CACHE_PREFIX}v2`;
 const ASSETS = [
   './', './index.html', './manifest.webmanifest',
   './favicon.svg', './favicon.ico', './icons/favicon-32.png',
   './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png'
 ];
+const ASSET_URLS = new Set(ASSETS.map(path => new URL(path, self.registration.scope).href));
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  const requests = [...ASSET_URLS].map(url => new Request(url, { cache: 'reload' }));
+  e.waitUntil(caches.open(CACHE).then(cache => cache.addAll(requests)).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {
   e.waitUntil(
-    caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+    caches.keys().then(keys => Promise.all(
+      keys.filter(key => key.startsWith(CACHE_PREFIX) && key !== CACHE).map(key => caches.delete(key))
+    ))
       .then(() => self.clients.claim())
   );
 });
 
-// Cache-first, falling back to network; refresh cache in the background.
+// Serve the installed version as a unit. Bump CACHE when releasing new assets.
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
-  e.respondWith(
-    caches.match(e.request).then(hit => {
-      const net = fetch(e.request).then(res => {
-        if (res.ok && new URL(e.request.url).origin === location.origin) {
-          const copy = res.clone(); caches.open(CACHE).then(c => c.put(e.request, copy));
-        }
-        return res;
-      }).catch(() => hit);
-      return hit || net;
-    })
-  );
+  const url = new URL(e.request.url);
+  if (e.request.mode === 'navigate') url.search = '';
+  if (!ASSET_URLS.has(url.href)) return;
+  e.respondWith(caches.open(CACHE).then(async cache => {
+    const cached = await cache.match(url.href);
+    return cached || fetch(e.request);
+  }));
 });

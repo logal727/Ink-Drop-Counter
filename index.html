@@ -7,13 +7,13 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Lore Tracker">
+<meta name="apple-mobile-web-app-title" content="Ink Dropper">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
 <link rel="shortcut icon" href="favicon.ico">
-<title>Lorcana Lore Tracker</title>
+<title>Ink Dropper</title>
 <style>
   :root {
     --chrome: #14121a;
@@ -261,7 +261,7 @@
 <div id="install" class="install" role="region" aria-label="Install this app" hidden>
   <img class="install-icon" src="icons/icon-192.png" alt="">
   <div class="install-body">
-    <strong>Install Lore Tracker</strong>
+    <strong>Install Ink Dropper</strong>
     <p id="installText"></p>
     <ol id="installSteps" hidden></ol>
     <div class="install-actions">
@@ -308,6 +308,7 @@
 <script>
 (() => {
   const KEY = 'lorcana-tracker-v1';
+  const HISTORY_LIMIT = 100;
   const BG = [
     ['Amber', '#E8A317'], ['Amethyst', '#7B3FA0'], ['Emerald', '#2E8B57'],
     ['Ruby', '#C62839'], ['Sapphire', '#1F6FB5'], ['Steel', '#6B7B8C'], ['Night', '#23202c'], ['Parchment', '#E9DFC7']
@@ -326,23 +327,65 @@
     history: []   // entries: [kind('l'|'d'), playerIndex, previousValue]
   });
 
+  function readCount(value, fallback = 0) {
+    // Recover old counts stored as digit strings without accepting partial numbers.
+    const count = typeof value === 'string' && /^\d+$/.test(value) ? Number(value) : value;
+    return Number.isSafeInteger(count) && count >= 0 ? count : fallback;
+  }
+
+  function readText(value, maxLength, fallback) {
+    return typeof value === 'string' ? value.trim().slice(0, maxLength) || fallback : fallback;
+  }
+
+  function readColor(value, fallback) {
+    return typeof value === 'string' && /^#[\da-f]{6}$/i.test(value) ? value : fallback;
+  }
+
   let S = load();
   function load() {
-    const d = fresh();
+    const state = fresh();
+    let raw;
     try {
-      const raw = JSON.parse(localStorage.getItem(KEY));
-      if (raw && raw.players && raw.players.length === 2) {
-        const s = Object.assign(d, raw);
-        s.players = raw.players.map((p, i) => Object.assign({}, fresh().players[i], p));
-        s.history = (raw.history || []).filter(h => h.length === 3);
-        if (!raw.ver) { s.mode = 'ink'; s.count = 1; }   // one-time move to the new defaults; colors/names kept
-        s.ver = 2;
-        if (!['both', 'ink', 'lore'].includes(s.mode)) s.mode = 'ink';
-        if (s.count !== 1) s.count = 2;
-        return s;
+      raw = JSON.parse(localStorage.getItem(KEY));
+    } catch {
+      return state;
+    }
+    if (!raw || !Array.isArray(raw.players)) return state;
+
+    // Older saves without a version keep their match data and use the new layout defaults.
+    if (raw.ver) {
+      if (['both', 'ink', 'lore'].includes(raw.mode)) state.mode = raw.mode;
+      if (raw.count === 1 || raw.count === 2) state.count = raw.count;
+    }
+    state.label = readText(raw.label, 14, state.label);
+    const target = readCount(raw.target);
+    if (target >= 1 && target <= 99) state.target = target;
+    for (const key of ['flip', 'wake', 'fx']) {
+      if (typeof raw[key] === 'boolean') state[key] = raw[key];
+    }
+    state.players = state.players.map((defaults, i) => {
+      const player = raw.players[i] ?? {};
+      return {
+        name: readText(player.name, 16, defaults.name),
+        bg: readColor(player.bg, defaults.bg),
+        fg: readColor(player.fg, defaults.fg),
+        ink: readColor(player.ink, defaults.ink),
+        score: readCount(player.score),
+        drops: readCount(player.drops)
+      };
+    });
+    if (Array.isArray(raw.history)) {
+      for (const entry of raw.history) {
+        if (!Array.isArray(entry) || entry.length !== 3) continue;
+        const [kind, player, value] = entry;
+        const previous = readCount(value, -1);
+        if ((kind === 'l' || kind === 'd') && (player === 0 || player === 1) && previous >= 0) {
+          state.history.push([kind, player, previous]);
+        }
       }
-    } catch (e) {}
-    return d;
+      state.history = state.history.slice(-HISTORY_LIMIT);
+    }
+    return state;
   }
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} };
 
@@ -396,19 +439,19 @@
     panels[1].style.display = S.count === 1 ? 'none' : '';
     $('#targetLabel').textContent = S.mode === 'ink' ? 'Ink drops' : `${S.label} to ${S.target}`;
     $('#undoBtn').disabled = !S.history.length;
-    document.title = `${S.label} Tracker`;
+    document.title = 'Ink Dropper';
   }
 
   /* ---------- state changes ---------- */
-  function push(kind, i, old) { S.history.push([kind, i, old]); if (S.history.length > 100) S.history.shift(); }
+  function push(kind, i, old) { S.history.push([kind, i, old]); if (S.history.length > HISTORY_LIMIT) S.history.shift(); }
 
   function changeLore(i, d) {
-    const p = S.players[i], next = Math.max(0, p.score + d);
+    const p = S.players[i], next = Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, p.score + d));
     if (next === p.score) return;
     push('l', i, p.score); p.score = next; save(); render(i);
   }
   function changeDrops(i, d) {
-    const p = S.players[i], next = Math.max(0, p.drops + d);
+    const p = S.players[i], next = Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, p.drops + d));
     if (next === p.drops) return;
     push('d', i, p.drops); p.drops = next; save(); render();
     magic(i, d > 0 ? 1 : -1);
